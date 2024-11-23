@@ -32,7 +32,7 @@ defmodule HelloCrawler do
              |> handle_response(url)
              |> Enum.reject(&Enum.member?(paths, to_string(&1)))
              |> Enum.map(&(Task.async(fn -> get_links(&1, paths, context) end)))
-             |> Enum.map(&Task.await/1)
+             |> Enum.map(&Task.await(&1, :infinity))
              |> List.flatten]
     else
       [url]
