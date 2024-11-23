@@ -25,13 +25,15 @@ defmodule HelloCrawler do
     
     if continue_crawl?(url, context) do
       IO.puts("Crawling \"#{url}\"...")
+      paths = [to_string(url) | paths]
+
       targets = url
              |> to_string
              |> HTTPoison.get(context.headers, context.options)
              |> handle_response(url)
              |> Enum.reject(&Enum.member?(paths, to_string(&1)))
 
-      paths = [url | paths] ++ (targets |> Enum.map(&to_string/1))
+      paths = paths ++ (targets |> Enum.map(&to_string/1))
 
       [url | targets
              |> Enum.map(&(Task.async(fn -> get_links(&1, paths, context) end)))
