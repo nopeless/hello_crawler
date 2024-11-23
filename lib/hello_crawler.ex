@@ -1,55 +1,62 @@
 defmodule HelloCrawler do
 
-  @default_max_depth 3
+  @default_depth 3
   @default_headers []
   @default_options [follow_redirect: true]
 
   def get_links(url, opts \\ []) do
     url = URI.parse(url)
+
     context = %{
-      max_depth: Keyword.get(opts, :max_depth, @default_max_depth),
+      depth: Keyword.get(opts, :depth, @default_depth),
       headers: Keyword.get(opts, :headers, @default_headers),
       options: Keyword.get(opts, :options, @default_options),
       host: url.host
     }
-    get_links(url, [], context)
+
+    url
+    |> get_links([], context)
     |> Enum.map(&to_string/1)
     |> Enum.uniq
   end
 
-  defp get_links(url, path, context) do
-    if continue_crawl?(path, context) and crawlable_url?(url, context) do
-      url
-      |> to_string
-      |> HTTPoison.get(context.headers, context.options)
-      |> handle_response(path, url, context)
+  defp get_links(url, paths, context) do
+    paths = [url | paths]
+    context = Map.put(context, :depth, context.depth - 1)
+
+    if continue_crawl?(url, context) do
+      IO.puts("Crawling \"#{url}\"...")
+      [url | url
+             |> to_string
+             |> HTTPoison.get(context.headers, context.options)
+             |> handle_response(url)
+             |> Enum.reject(&Enum.member?(paths, to_string(&1)))
+             |> Enum.map(&(Task.async(fn -> get_links(&1, paths, context) end)))
+             |> Enum.map(&Task.await/1)
+             |> List.flatten]
     else
       [url]
     end
   end
 
-  defp continue_crawl?(path, %{max_depth: max_depth}) when length(path) > max_depth, do: false
-  defp continue_crawl?(_, _), do: true
+  defp continue_crawl?(%{host: host}, %{depth: depth, host: initial}), do: depth >= 0 and host == initial
 
-  defp crawlable_url?(%{host: host}, %{host: initial}) when host == initial, do: true
-  defp crawlable_url?(_, _), do: false
-
-  defp handle_response({:ok, %{body: body}}, path, url, context) do
-    IO.puts("Crawling \"#{url}\"...")
-    path = [url | path]
-    [url | body
-           |> Floki.find("a")
-           |> Floki.attribute("href")
-           |> Enum.map(&URI.merge(url, &1))
-           |> Enum.map(&to_string/1)
-           |> Enum.reject(&Enum.member?(path, &1))
-           |> Enum.map(&(Task.async(fn -> get_links(URI.parse(&1), [&1 | path], context) end)))
-           |> Enum.map(&Task.await/1)
-           |> List.flatten]
+  defp handle_response({:ok, %{body: body }}, url) do
+    with {:ok, document} <- Floki.parse_document(body) do
+      document
+      |> Floki.find("a")
+      |> Floki.attribute("href")
+      |> Enum.map(&URI.merge(url, &1))
+      |> Enum.uniq
+    else
+      _ -> 
+        IO.puts("FAIL: \"#{url}\" (reason: invalid HTML)")
+        []
+    end
   end
 
-  defp handle_response(_response, _path, url) do
-    [url]
+  defp handle_response({_, %{ reason: reason }}, url) do
+    IO.puts("FAIL: \"#{url}\" (reason: #{to_string(reason)})")
+    []
   end
-
 end
