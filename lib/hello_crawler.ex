@@ -21,16 +21,19 @@ defmodule HelloCrawler do
   end
 
   defp get_links(url, paths, context) do
-    paths = [to_string(url) | paths]
     context = Map.put(context, :depth, context.depth - 1)
-
+    
     if continue_crawl?(url, context) do
       IO.puts("Crawling \"#{url}\"...")
-      [url | url
+      targets = url
              |> to_string
              |> HTTPoison.get(context.headers, context.options)
              |> handle_response(url)
              |> Enum.reject(&Enum.member?(paths, to_string(&1)))
+
+      paths = [url | paths] ++ (targets |> Enum.map(&to_string/1))
+
+      [url | targets
              |> Enum.map(&(Task.async(fn -> get_links(&1, paths, context) end)))
              |> Enum.map(&Task.await(&1, :infinity))
              |> List.flatten]
