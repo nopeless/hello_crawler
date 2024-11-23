@@ -21,7 +21,7 @@ defmodule HelloCrawler do
   end
 
   defp get_links(url, paths, context) do
-    paths = [url | paths]
+    paths = [to_string(url) | paths]
     context = Map.put(context, :depth, context.depth - 1)
 
     if continue_crawl?(url, context) do
